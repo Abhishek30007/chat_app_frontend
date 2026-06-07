@@ -195,8 +195,8 @@ function Chat({ socket, username, onLogout }) {
             {/* Sidebar */}
             <div className="sidebar">
                 <div className="sidebar-header">
-                    <h3>Chat App</h3>
-                    <p>Welcome, {username}!</p>
+                    <h3>Chatting karoo ...</h3>
+                    <h4>BAAT kro {username}, dusre logo se </h4>
                 </div>
 
                 <div className="group-actions">
