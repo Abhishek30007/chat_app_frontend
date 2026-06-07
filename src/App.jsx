@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 import Login from './components/Login';
 import Chat from './components/Chat';
-
-const SOCKET_URL = 'http://localhost:5000';
+import { SOCKET_URL } from './config';
 
 function App() {
     const [socket, setSocket] = useState(null);

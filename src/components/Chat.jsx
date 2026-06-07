@@ -3,8 +3,7 @@ import axios from 'axios';
 import CreateGroup from './CreateGroup';
 import JoinGroup from './JoinGroup';
 import RoomList from './RoomList';
-
-const API_URL = 'http://localhost:5000/api';
+import { API_URL } from '../config';
 
 function Chat({ socket, username, onLogout }) {
     const [messages, setMessages] = useState([]);
@@ -36,7 +35,7 @@ function Chat({ socket, username, onLogout }) {
         };
 
         fetchRooms();
-    }, [username]);
+    }, [username, currentRoom]);
 
     // Join room and fetch messages when room changes
     useEffect(() => {

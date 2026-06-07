@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: chat-app-frontend
+    runtime: static
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://chat-app-backend-rd95.onrender.com
+      - key: REACT_APP_SOCKET_URL
+        value: https://chat-app-backend-rd95.onrender.com
