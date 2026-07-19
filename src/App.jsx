@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import Login from './components/Login';
-import Chat from './components/Chat';
+import ChatRoom from './components/ChatRoom';
 import { SOCKET_URL } from './config';
 
 function App() {
@@ -40,17 +41,41 @@ function App() {
     const handleLogout = () => {
         setIsAuthenticated(false);
         setUsername('');
+        if (socket) {
+            socket.disconnect();
+        }
         setSocket(null);
     };
 
     return (
-        <div className="app">
-            {!isAuthenticated ? (
-                <Login onLogin={handleLogin} />
-            ) : (
-                socket && <Chat socket={socket} username={username} onLogout={handleLogout} />
-            )}
-        </div>
+        <Router>
+            <div className="app">
+                <Routes>
+                    <Route 
+                        path="/" 
+                        element={
+                            !isAuthenticated ? (
+                                <Login onLogin={handleLogin} />
+                            ) : (
+                                socket && <ChatRoom socket={socket} username={username} onLogout={handleLogout} />
+                            )
+                        } 
+                    />
+                    <Route 
+                        path="/room/:inviteCode" 
+                        element={
+                            !isAuthenticated ? (
+                                <Login onLogin={handleLogin} />
+                            ) : (
+                                socket && <ChatRoom socket={socket} username={username} onLogout={handleLogout} />
+                            )
+                        } 
+                    />
+                    {/* Fallback route */}
+                    <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+            </div>
+        </Router>
     );
 }
 

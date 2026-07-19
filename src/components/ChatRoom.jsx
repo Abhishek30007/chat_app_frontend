@@ -1,11 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import CreateGroup from './CreateGroup';
 import JoinGroup from './JoinGroup';
 import RoomList from './RoomList';
 import { API_URL } from '../config';
 
-function Chat({ socket, username, onLogout }) {
+function ParticipantItem({ participant }) {
+    const [city, setCity] = useState('');
+    const { username, location } = participant;
+
+    useEffect(() => {
+        if (location && location.latitude && location.longitude) {
+            const fetchCity = async () => {
+                try {
+                    const response = await axios.get(
+                        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${location.latitude}&longitude=${location.longitude}&localityLanguage=en`
+                    );
+                    const cityName = response.data.city || response.data.locality || response.data.principalSubdivision;
+                    if (cityName) {
+                        setCity(cityName);
+                    } else {
+                        setCity(`${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)}`);
+                    }
+                } catch (error) {
+                    console.error('Error reverse geocoding location:', error);
+                    setCity(`${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)}`);
+                }
+            };
+            fetchCity();
+        }
+    }, [location]);
+
+    return (
+        <div className="user-item">
+            <div className="online-indicator"></div>
+            <span>{username}</span>
+            {location && (
+                <span className="user-location" style={{ fontSize: '0.8rem', color: '#888', marginLeft: '5px' }}>
+                    📍 {city || 'Locating...'}
+                </span>
+            )}
+        </div>
+    );
+}
+
+function ChatRoom({ socket, username, onLogout }) {
+    const { inviteCode } = useParams();
+    const navigate = useNavigate();
+
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [rooms, setRooms] = useState([]);
@@ -18,16 +61,45 @@ function Chat({ socket, username, onLogout }) {
     const messagesEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
 
-    // Fetch user's rooms
+    // Fetch user's rooms and handle URL direct joining
     useEffect(() => {
         const fetchRooms = async () => {
             try {
                 const response = await axios.get(`${API_URL}/rooms/user/${username}`);
                 setRooms(response.data);
 
-                // Auto-select first room if available
-                if (response.data.length > 0 && !currentRoom) {
-                    setCurrentRoom(response.data[0]);
+                // Auto-select room based on URL inviteCode, or default to first room
+                if (inviteCode) {
+                    const existingRoom = response.data.find(r => r.inviteCode === inviteCode);
+                    if (existingRoom) {
+                        setCurrentRoom(existingRoom);
+                    } else {
+                        // Join the room if not already a participant
+                        try {
+                            const joinResponse = await axios.post(`${API_URL}/rooms/join`, {
+                                inviteCode: inviteCode.trim(),
+                                username
+                            });
+                            const joinedRoom = joinResponse.data.room;
+                            // Re-fetch all rooms to make sure we have the correct, single list from database
+                            const roomsRes = await axios.get(`${API_URL}/rooms/user/${username}`);
+                            setRooms(roomsRes.data);
+                            setCurrentRoom(joinedRoom);
+                        } catch (err) {
+                            console.error('Failed to join room from URL', err);
+                            // Fallback to first room if joining failed
+                            if (response.data.length > 0) {
+                                const fallbackRoom = response.data[0];
+                                setCurrentRoom(fallbackRoom);
+                                navigate(`/room/${fallbackRoom.inviteCode}`, { replace: true });
+                            }
+                        }
+                    }
+                } else if (response.data.length > 0 && !currentRoom) {
+                    // No invite code in URL, auto-select first room
+                    const firstRoom = response.data[0];
+                    setCurrentRoom(firstRoom);
+                    navigate(`/room/${firstRoom.inviteCode}`, { replace: true });
                 }
             } catch (error) {
                 console.error('Error fetching rooms:', error);
@@ -35,53 +107,81 @@ function Chat({ socket, username, onLogout }) {
         };
 
         fetchRooms();
-    }, [username, currentRoom]);
+    }, [username, inviteCode, navigate]);
 
     // Join room and fetch messages when room changes
     useEffect(() => {
         if (!currentRoom || !socket) return;
 
         const roomId = currentRoom.id || currentRoom._id;
+        const roomInviteCode = currentRoom.inviteCode;
 
-        // Join the room via Socket.IO
-        socket.emit('join_room', { username, roomId });
+        // Helper to perform the socket room joining
+        const joinSocketRoom = (location) => {
+            socket.emit('join_room', { 
+                username, 
+                inviteCode: roomInviteCode, 
+                location 
+            });
 
-        // Fetch message history for this room
-        const fetchMessages = async () => {
-            try {
-                const response = await axios.get(`${API_URL}/messages?roomId=${roomId}`);
-                setMessages(response.data);
-            } catch (error) {
-                console.error('Error fetching messages:', error);
-            }
+            // Fetch message history for this room
+            const fetchMessages = async () => {
+                try {
+                    const response = await axios.get(`${API_URL}/messages?roomId=${roomId}`);
+                    setMessages(response.data);
+                } catch (error) {
+                    console.error('Error fetching messages:', error);
+                }
+            };
+
+            fetchMessages();
         };
 
-        fetchMessages();
+        // Geolocation setup before emitting join_room
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const location = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude
+                    };
+                    joinSocketRoom(location);
+                },
+                (error) => {
+                    console.error('Geolocation access error or denied:', error);
+                    joinSocketRoom(null);
+                },
+                { timeout: 5000 }
+            );
+        } else {
+            console.error('Geolocation is not supported by this browser.');
+            joinSocketRoom(null);
+        }
 
         // Listen for new messages in this room
         const handleReceiveMessage = (message) => {
-            if (message.roomId === roomId) {
+            if (message.inviteCode === roomInviteCode || message.roomId === roomId) {
                 setMessages((prev) => [...prev, message]);
             }
         };
 
         // Listen for participant updates
         const handleParticipantsUpdate = (data) => {
-            if (data.roomId === roomId) {
+            if (data.roomId === roomInviteCode) {
                 setRoomParticipants(data.participants);
             }
         };
 
         // Listen for typing indicators
         const handleUserTyping = (data) => {
-            if (data.roomId === roomId && data.username !== username) {
+            if (data.roomId === roomInviteCode && data.username !== username) {
                 setTypingUser(data.username);
                 setIsTyping(true);
             }
         };
 
         const handleStopTyping = (data) => {
-            if (data.roomId === roomId) {
+            if (data.roomId === roomInviteCode) {
                 setIsTyping(false);
                 setTypingUser('');
             }
@@ -94,7 +194,7 @@ function Chat({ socket, username, onLogout }) {
 
         return () => {
             // Leave the room when switching
-            socket.emit('leave_room', { username, roomId });
+            socket.emit('leave_room', { username, inviteCode: roomInviteCode });
             socket.off('receive_message', handleReceiveMessage);
             socket.off('room_participants_update', handleParticipantsUpdate);
             socket.off('user_typing', handleUserTyping);
@@ -112,15 +212,17 @@ function Chat({ socket, username, onLogout }) {
 
         if (newMessage.trim() && currentRoom) {
             const roomId = currentRoom.id || currentRoom._id;
+            const roomInviteCode = currentRoom.inviteCode;
 
             socket.emit('send_message', {
                 sender: username,
                 content: newMessage,
-                roomId
+                roomId,
+                inviteCode: roomInviteCode
             });
 
             setNewMessage('');
-            socket.emit('stop_typing', { roomId });
+            socket.emit('stop_typing', { inviteCode: roomInviteCode });
         }
     };
 
@@ -129,10 +231,10 @@ function Chat({ socket, username, onLogout }) {
 
         if (!currentRoom) return;
 
-        const roomId = currentRoom.id || currentRoom._id;
+        const roomInviteCode = currentRoom.inviteCode;
 
         // Emit typing event
-        socket.emit('typing', { username, roomId });
+        socket.emit('typing', { username, inviteCode: roomInviteCode });
 
         // Clear previous timeout
         if (typingTimeoutRef.current) {
@@ -141,7 +243,7 @@ function Chat({ socket, username, onLogout }) {
 
         // Stop typing after 1 second of inactivity
         typingTimeoutRef.current = setTimeout(() => {
-            socket.emit('stop_typing', { roomId });
+            socket.emit('stop_typing', { inviteCode: roomInviteCode });
         }, 1000);
     };
 
@@ -149,29 +251,30 @@ function Chat({ socket, username, onLogout }) {
         localStorage.removeItem('token');
         localStorage.removeItem('username');
         if (currentRoom) {
-            const roomId = currentRoom.id || currentRoom._id;
-            socket.emit('leave_room', { username, roomId });
+            const roomInviteCode = currentRoom.inviteCode;
+            socket.emit('leave_room', { username, inviteCode: roomInviteCode });
         }
         socket.disconnect();
         onLogout();
+        navigate('/');
     };
 
     const handleGroupCreated = async (room) => {
-        setRooms([room, ...rooms]);
         setCurrentRoom(room);
         setShowCreateModal(false);
+        navigate(`/room/${room.inviteCode}`);
     };
 
     const handleGroupJoined = async (room) => {
-        // Refresh rooms list
-        const response = await axios.get(`${API_URL}/rooms/user/${username}`);
-        setRooms(response.data);
         setCurrentRoom(room);
+        setShowJoinModal(false);
+        navigate(`/room/${room.inviteCode}`);
     };
 
     const handleRoomSelect = (room) => {
         setCurrentRoom(room);
         setMessages([]);
+        navigate(`/room/${room.inviteCode}`);
     };
 
     const formatTime = (timestamp) => {
@@ -184,7 +287,7 @@ function Chat({ socket, username, onLogout }) {
 
     const copyInviteLink = () => {
         if (currentRoom) {
-            const inviteLink = `${window.location.origin}/join/${currentRoom.inviteCode}`;
+            const inviteLink = `${window.location.origin}/room/${currentRoom.inviteCode}`;
             navigator.clipboard.writeText(inviteLink);
             alert('Invite link copied to clipboard!');
         }
@@ -196,7 +299,7 @@ function Chat({ socket, username, onLogout }) {
             <div className="sidebar">
                 <div className="sidebar-header">
                     <h3>Chatting karoo ...</h3>
-                    <h4>BAAT kro {username}, dusre logo se </h4>
+                    <h4>BAAT kro kya hee kaam hai zindagi me </h4>
                 </div>
 
                 <div className="group-actions">
@@ -217,10 +320,10 @@ function Chat({ socket, username, onLogout }) {
                 <div className="online-users">
                     <h4>Participants ({roomParticipants.length})</h4>
                     {roomParticipants.map((participant, index) => (
-                        <div key={index} className="user-item">
-                            <div className="online-indicator"></div>
-                            <span>{participant}</span>
-                        </div>
+                        <ParticipantItem 
+                            key={participant.username || index} 
+                            participant={participant} 
+                        />
                     ))}
                 </div>
 
@@ -313,4 +416,4 @@ function Chat({ socket, username, onLogout }) {
     );
 }
 
-export default Chat;
+export default ChatRoom;

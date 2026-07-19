@@ -29,7 +29,7 @@ function CreateGroup({ username, onGroupCreated, onClose }) {
     };
 
     const copyInviteLink = () => {
-        const inviteLink = `${window.location.origin}/join/${createdRoom.inviteCode}`;
+        const inviteLink = `${window.location.origin}/room/${createdRoom.inviteCode}`;
         navigator.clipboard.writeText(inviteLink);
         alert('Invite link copied to clipboard!');
     };
@@ -74,7 +74,7 @@ function CreateGroup({ username, onGroupCreated, onClose }) {
                             <div className="invite-link-display">
                                 <input
                                     type="text"
-                                    value={`${window.location.origin}/join/${createdRoom.inviteCode}`}
+                                    value={`${window.location.origin}/room/${createdRoom.inviteCode}`}
                                     readOnly
                                 />
                                 <button className="btn btn-primary" onClick={copyInviteLink}>
