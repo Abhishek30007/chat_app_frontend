@@ -58,6 +58,7 @@ function ChatRoom({ socket, username, onLogout }) {
     const [typingUser, setTypingUser] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showJoinModal, setShowJoinModal] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const messagesEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
 
@@ -256,24 +257,28 @@ function ChatRoom({ socket, username, onLogout }) {
         }
         socket.disconnect();
         onLogout();
+        setIsSidebarOpen(false);
         navigate('/');
     };
 
     const handleGroupCreated = async (room) => {
         setCurrentRoom(room);
         setShowCreateModal(false);
+        setIsSidebarOpen(false);
         navigate(`/room/${room.inviteCode}`);
     };
 
     const handleGroupJoined = async (room) => {
         setCurrentRoom(room);
         setShowJoinModal(false);
+        setIsSidebarOpen(false);
         navigate(`/room/${room.inviteCode}`);
     };
 
     const handleRoomSelect = (room) => {
         setCurrentRoom(room);
         setMessages([]);
+        setIsSidebarOpen(false);
         navigate(`/room/${room.inviteCode}`);
     };
 
@@ -295,8 +300,16 @@ function ChatRoom({ socket, username, onLogout }) {
 
     return (
         <div className="chat-container">
+            {/* Sidebar Overlay for Mobile */}
+            {isSidebarOpen && (
+                <div 
+                    className="sidebar-overlay-active" 
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
-            <div className="sidebar">
+            <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
                 <div className="sidebar-header">
                     <h3>Chatting karoo ...</h3>
                     <h4>BAAT kro kya hee kaam hai zindagi me </h4>
@@ -337,7 +350,14 @@ function ChatRoom({ socket, username, onLogout }) {
                 {currentRoom ? (
                     <>
                         <div className="chat-header">
-                            <div>
+                            <button 
+                                className="sidebar-toggle-btn" 
+                                onClick={() => setIsSidebarOpen(true)}
+                                aria-label="Toggle Sidebar"
+                            >
+                                ☰ Groups
+                            </button>
+                            <div className="chat-header-title">
                                 <h2>{currentRoom.name}</h2>
                                 <p className="room-info">
                                     Invite Code: <strong>{currentRoom.inviteCode}</strong>
@@ -390,6 +410,13 @@ function ChatRoom({ socket, username, onLogout }) {
                     </>
                 ) : (
                     <div className="no-room-selected">
+                        <button 
+                            className="sidebar-toggle-btn no-room-toggle" 
+                            onClick={() => setIsSidebarOpen(true)}
+                            aria-label="Toggle Sidebar"
+                        >
+                            ☰ Show Groups
+                        </button>
                         <h2>Welcome to Chat App!</h2>
                         <p>Create a new group or join an existing one to start chatting.</p>
                     </div>
