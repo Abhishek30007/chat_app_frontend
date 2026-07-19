@@ -20,7 +20,9 @@ function App() {
             setIsAuthenticated(true);
 
             // Initialize socket connection
-            const newSocket = io(SOCKET_URL);
+            const newSocket = io(SOCKET_URL, {
+                auth: { token: localStorage.getItem('token') }
+            });
             setSocket(newSocket);
 
             return () => {
@@ -34,7 +36,9 @@ function App() {
         setIsAuthenticated(true);
 
         // Initialize socket connection
-        const newSocket = io(SOCKET_URL);
+        const newSocket = io(SOCKET_URL, {
+            auth: { token: localStorage.getItem('token') }
+        });
         setSocket(newSocket);
     };
 
