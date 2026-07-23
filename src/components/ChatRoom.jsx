@@ -61,6 +61,7 @@ function ChatRoom({ socket, username, onLogout }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const messagesEndRef = useRef(null);
     const typingTimeoutRef = useRef(null);
+    const isTypingRef = useRef(false);
 
     // Fetch user's rooms and handle URL direct joining
     useEffect(() => {
@@ -196,6 +197,11 @@ function ChatRoom({ socket, username, onLogout }) {
         return () => {
             // Leave the room when switching
             socket.emit('leave_room', { username, inviteCode: roomInviteCode });
+            isTypingRef.current = false;
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+            }
             socket.off('receive_message', handleReceiveMessage);
             socket.off('room_participants_update', handleParticipantsUpdate);
             socket.off('user_typing', handleUserTyping);
@@ -223,19 +229,43 @@ function ChatRoom({ socket, username, onLogout }) {
             });
 
             setNewMessage('');
+            
+            // Clear typing state immediately
+            isTypingRef.current = false;
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+                typingTimeoutRef.current = null;
+            }
             socket.emit('stop_typing', { inviteCode: roomInviteCode });
         }
     };
 
     const handleTyping = (e) => {
-        setNewMessage(e.target.value);
+        const value = e.target.value;
+        setNewMessage(value);
 
         if (!currentRoom) return;
 
         const roomInviteCode = currentRoom.inviteCode;
 
-        // Emit typing event
-        socket.emit('typing', { username, inviteCode: roomInviteCode });
+        // If the message input becomes completely empty (e.g. backspaced all text)
+        if (value.trim() === '') {
+            if (isTypingRef.current) {
+                isTypingRef.current = false;
+                if (typingTimeoutRef.current) {
+                    clearTimeout(typingTimeoutRef.current);
+                    typingTimeoutRef.current = null;
+                }
+                socket.emit('stop_typing', { inviteCode: roomInviteCode });
+            }
+            return;
+        }
+
+        // Emit typing event ONLY when transitioning from idle → typing
+        if (!isTypingRef.current) {
+            isTypingRef.current = true;
+            socket.emit('typing', { username, inviteCode: roomInviteCode });
+        }
 
         // Clear previous timeout
         if (typingTimeoutRef.current) {
@@ -244,6 +274,7 @@ function ChatRoom({ socket, username, onLogout }) {
 
         // Stop typing after 1 second of inactivity
         typingTimeoutRef.current = setTimeout(() => {
+            isTypingRef.current = false;
             socket.emit('stop_typing', { inviteCode: roomInviteCode });
         }, 1000);
     };
